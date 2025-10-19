@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "29587097783",
+    "project_id": "pdf-payment-app-devaj",
+    "storage_bucket": "pdf-payment-app-devaj.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:29587097783:android:d230a850e7e13dc79b6532",
+        "android_client_info": {
+          "package_name": "com.example.pdf_payment"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJpaiE3jPb4AU7n_9im3Gge4Lg6vP1XtE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:29587097783:android:5dd26d7b8ade05ea9b6532",
+        "android_client_info": {
+          "package_name": "com.example.pdf_viewer"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCJpaiE3jPb4AU7n_9im3Gge4Lg6vP1XtE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
