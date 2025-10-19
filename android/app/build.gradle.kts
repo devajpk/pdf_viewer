@@ -24,7 +24,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.pdf_viewer"
-        minSdk = 23
+        minSdk = flutter.minSdkVersion
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
