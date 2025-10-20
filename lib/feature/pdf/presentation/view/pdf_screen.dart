@@ -1,13 +1,13 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf_viewer/feature/pdf/presentation/view_model/pdf_bloc.dart';
 import 'package:pdf_viewer/feature/pdf/presentation/view_model/pdf_event.dart';
 import 'package:pdf_viewer/feature/pdf/presentation/view_model/pdf_state.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import 'package:http/http.dart' as http;
+import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 class PdfListPage extends StatefulWidget {
   @override
@@ -16,10 +16,6 @@ class PdfListPage extends StatefulWidget {
 
 class _PdfListPageState extends State<PdfListPage> {
   late Razorpay _razorpay;
-  final Map<String, bool> _downloadingFiles = {};
-  
-  // CHANGE 1: Store the PDF that user wants to purchase
-  // This will be used to open the PDF after successful payment
   dynamic _pendingPdfToOpen;
 
   @override
@@ -46,7 +42,6 @@ class _PdfListPageState extends State<PdfListPage> {
     context.read<PdfBloc>().add(LoadPdfsEvent());
   }
 
-  // CHANGE 2: Modified to open PDF after successful payment
   void _handlePaymentSuccess(PaymentSuccessResponse response) {
     debugPrint("Payment successful: ${response.paymentId}");
     
@@ -64,25 +59,20 @@ class _PdfListPageState extends State<PdfListPage> {
       ),
     );
     
-    // Reload PDFs to update purchase status from server
     context.read<PdfBloc>().add(LoadPdfsEvent());
     
-    // IMPORTANT: Open the PDF after successful payment
-    // Wait 500ms to ensure UI updates complete
     if (_pendingPdfToOpen != null) {
       Future.delayed(Duration(milliseconds: 500), () {
-        _openPdfFile(_pendingPdfToOpen);
-        _pendingPdfToOpen = null; // Clear after opening to prevent duplicate opens
+        _viewPdf(_pendingPdfToOpen);
+        _pendingPdfToOpen = null;
       });
     }
   }
 
-  // CHANGE 3: Modified to clear pending PDF on payment failure
   void _handlePaymentError(PaymentFailureResponse response) {
-    // Clear pending PDF since payment failed
     _pendingPdfToOpen = null;
     
-    if (response.code != 2) { // code 2 is user cancelled
+    if (response.code != 2) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -97,7 +87,6 @@ class _PdfListPageState extends State<PdfListPage> {
         ),
       );
     } else {
-      // User cancelled the payment
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Payment cancelled'),
@@ -119,10 +108,7 @@ class _PdfListPageState extends State<PdfListPage> {
     );
   }
 
-  // CHANGE 4: Store PDF reference when purchase is initiated
-  // This PDF will be opened automatically after successful payment
   void _initiatePdfPurchase(dynamic pdf) {
-    // Store the PDF to open after payment succeeds
     _pendingPdfToOpen = pdf;
     
     final options = {
@@ -141,7 +127,7 @@ class _PdfListPageState extends State<PdfListPage> {
       _razorpay.open(options);
     } catch (e) {
       debugPrint("Razorpay error: $e");
-      _pendingPdfToOpen = null; // Clear on error
+      _pendingPdfToOpen = null;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Failed to initialize payment'),
@@ -151,21 +137,16 @@ class _PdfListPageState extends State<PdfListPage> {
     }
   }
 
-  // CHANGE 5: NEW METHOD - Handle PDF tap with purchase check
-  // This ensures unpurchased PDFs show purchase prompt instead of opening
   Future<void> _handlePdfTap(dynamic pdf) async {
     final isPurchased = pdf.purchased;
     
     if (isPurchased) {
-      // PDF already purchased - open it directly
-      await _openPdfFile(pdf);
+      await _viewPdf(pdf);
     } else {
-      // PDF not purchased - show purchase prompt dialog
       _showPurchasePrompt(pdf);
     }
   }
 
-  // CHANGE 6: NEW METHOD - Show dialog prompting user to purchase
   void _showPurchasePrompt(dynamic pdf) {
     showDialog(
       context: context,
@@ -251,86 +232,15 @@ class _PdfListPageState extends State<PdfListPage> {
     );
   }
 
-  // CHANGE 7: This method now only opens purchased PDFs
-  // Unpurchased PDFs are blocked by _handlePdfTap() method
-  Future<void> _openPdfFile(dynamic pdf) async {
-    setState(() {
-      _downloadingFiles[pdf.name] = true;
-    });
-
-    try {
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/${pdf.name}');
-
-      if (await file.exists()) {
-        // PDF already downloaded - open it
-        await _openLocalPdf(file);
-      } else {
-        // PDF not downloaded - download first then open
-        await _downloadAndOpenPdf(pdf, file);
-      }
-    } catch (e) {
-      _showErrorSnackBar('Failed to open PDF: ${e.toString()}');
-    } finally {
-      setState(() {
-        _downloadingFiles.remove(pdf.name);
-      });
-    }
-  }
-
-  Future<void> _openLocalPdf(File file) async {
-    final result = await OpenFile.open(file.path);
-    
-    if (result.type != ResultType.done) {
-      _showErrorSnackBar('Failed to open PDF file');
-    }
-  }
-
-  Future<void> _downloadAndOpenPdf(dynamic pdf, File file) async {
-    try {
-      _showDownloadDialog(pdf.name);
-      
-      final response = await http.get(Uri.parse(pdf.url));
-      
-      if (response.statusCode == 200) {
-        await file.writeAsBytes(response.bodyBytes);
-        
-        Navigator.of(context, rootNavigator: true).pop();
-        await _openLocalPdf(file);
-        
-        _showSuccessSnackBar('PDF downloaded successfully');
-      } else {
-        throw Exception('HTTP ${response.statusCode}');
-      }
-    } catch (e) {
-      Navigator.of(context, rootNavigator: true).pop();
-      throw e;
-    }
-  }
-
-  void _showDownloadDialog(String fileName) {
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircularProgressIndicator(
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-            ),
-            SizedBox(height: 16),
-            Text(
-              'Downloading $fileName...',
-              style: TextStyle(fontSize: 16),
-              textAlign: TextAlign.center,
-            ),
-            SizedBox(height: 8),
-            Text(
-              'Please wait',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
-            ),
-          ],
+  // NEW: View PDF inline without downloading - using URL directly
+  Future<void> _viewPdf(dynamic pdf) async {
+    // Navigate directly to PDF viewer using the URL
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PdfViewerPage(
+          pdfUrl: pdf.url,
+          pdfName: pdf.name ?? 'Document',
         ),
       ),
     );
@@ -349,22 +259,6 @@ class _PdfListPageState extends State<PdfListPage> {
         backgroundColor: Colors.red,
         behavior: SnackBarBehavior.floating,
         duration: Duration(seconds: 4),
-      ),
-    );
-  }
-
-  void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.white),
-            SizedBox(width: 8),
-            Text(message),
-          ],
-        ),
-        backgroundColor: Colors.green,
-        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -528,12 +422,7 @@ class _PdfListPageState extends State<PdfListPage> {
       itemCount: pdfs.length,
       itemBuilder: (context, index) {
         final pdf = pdfs[index];
-        final isDownloading = _downloadingFiles[pdf.name] == true;
-        
-        return AnimatedSwitcher(
-          duration: Duration(milliseconds: 200),
-          child: _buildPdfListItem(pdf, isDownloading),
-        );
+        return _buildPdfListItem(pdf);
       },
     );
   }
@@ -574,7 +463,7 @@ class _PdfListPageState extends State<PdfListPage> {
     );
   }
 
-  Widget _buildPdfListItem(dynamic pdf, bool isDownloading) {
+  Widget _buildPdfListItem(dynamic pdf) {
     final isPurchased = pdf.purchased;
     
     return Container(
@@ -594,19 +483,17 @@ class _PdfListPageState extends State<PdfListPage> {
         color: Colors.transparent,
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
-          // CHANGE 8: Card tap now calls _handlePdfTap instead of _openPdfFile
-          // This ensures purchase check happens before opening
-          onTap: isDownloading ? null : () => _handlePdfTap(pdf),
+          onTap: () => _handlePdfTap(pdf),
           child: Padding(
             padding: EdgeInsets.all(16),
             child: Row(
               children: [
-                _buildPdfIcon(isPurchased, isDownloading),
+                _buildPdfIcon(isPurchased),
                 SizedBox(width: 16),
                 Expanded(
                   child: _buildPdfInfo(pdf, isPurchased),
                 ),
-                _buildActionButtons(pdf, isPurchased, isDownloading),
+                _buildActionButtons(pdf, isPurchased),
               ],
             ),
           ),
@@ -615,27 +502,11 @@ class _PdfListPageState extends State<PdfListPage> {
     );
   }
 
-  Widget _buildPdfIcon(bool isPurchased, bool isDownloading) {
-    Color iconColor;
-    Widget iconWidget;
-
-    if (isDownloading) {
-      iconColor = Colors.blue;
-      iconWidget = SizedBox(
-        width: 24,
-        height: 24,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-        ),
-      );
-    } else if (isPurchased) {
-      iconColor = Colors.green;
-      iconWidget = Icon(Icons.verified, size: 16, color: Colors.white);
-    } else {
-      iconColor = Colors.blue;
-      iconWidget = Icon(Icons.description, size: 20, color: Colors.white);
-    }
+  Widget _buildPdfIcon(bool isPurchased) {
+    Color iconColor = isPurchased ? Colors.green : Colors.blue;
+    Widget iconWidget = isPurchased
+        ? Icon(Icons.verified, size: 16, color: Colors.white)
+        : Icon(Icons.description, size: 20, color: Colors.white);
 
     return Container(
       width: 48,
@@ -649,17 +520,15 @@ class _PdfListPageState extends State<PdfListPage> {
         ),
       ),
       child: Center(
-        child: isDownloading 
-            ? iconWidget 
-            : Container(
-                width: 32,
-                height: 32,
-                decoration: BoxDecoration(
-                  color: iconColor,
-                  shape: BoxShape.circle,
-                ),
-                child: Center(child: iconWidget),
-              ),
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: iconColor,
+            shape: BoxShape.circle,
+          ),
+          child: Center(child: iconWidget),
+        ),
       ),
     );
   }
@@ -691,11 +560,11 @@ class _PdfListPageState extends State<PdfListPage> {
     );
   }
 
-  Widget _buildActionButtons(dynamic pdf, bool isPurchased, bool isDownloading) {
+  Widget _buildActionButtons(dynamic pdf, bool isPurchased) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _buildOpenButton(pdf, isPurchased, isDownloading),
+        _buildViewButton(pdf, isPurchased),
         SizedBox(width: 8),
         if (!isPurchased) _buildBuyButton(pdf),
         if (isPurchased) _buildPurchasedBadge(),
@@ -703,44 +572,23 @@ class _PdfListPageState extends State<PdfListPage> {
     );
   }
 
-  // CHANGE 9: Open button now shows lock icon for unpurchased PDFs
-  Widget _buildOpenButton(dynamic pdf, bool isPurchased, bool isDownloading) {
+  Widget _buildViewButton(dynamic pdf, bool isPurchased) {
     return Tooltip(
-      message: isDownloading 
-          ? 'Downloading...' 
-          : isPurchased 
-              ? 'Open PDF' 
-              : 'Purchase required', // Shows lock for unpurchased
-      child: AnimatedContainer(
-        duration: Duration(milliseconds: 200),
+      message: isPurchased ? 'View PDF' : 'Purchase required',
+      child: Container(
         decoration: BoxDecoration(
-          color: isDownloading 
-              ? Colors.grey[100] 
-              : isPurchased 
-                  ? Colors.blue.withOpacity(0.1)
-                  : Colors.grey[100], // Grey background for locked PDFs
+          color: isPurchased 
+              ? Colors.blue.withOpacity(0.1)
+              : Colors.grey[100],
           borderRadius: BorderRadius.circular(8),
         ),
         child: IconButton(
-          icon: isDownloading
-              ? SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
-                  ),
-                )
-              : Icon(
-                  isPurchased ? Icons.open_in_new : Icons.lock, // Lock icon for unpurchased
-                  size: 20,
-                ),
-          color: isDownloading 
-              ? Colors.grey 
-              : isPurchased 
-                  ? Colors.blue 
-                  : Colors.grey, // Grey color for locked PDFs
-          onPressed: isDownloading ? null : () => _handlePdfTap(pdf),
+          icon: Icon(
+            isPurchased ? Icons.visibility : Icons.lock,
+            size: 20,
+          ),
+          color: isPurchased ? Colors.blue : Colors.grey,
+          onPressed: () => _handlePdfTap(pdf),
           padding: EdgeInsets.all(8),
           constraints: BoxConstraints(minWidth: 40, minHeight: 40),
         ),
@@ -847,15 +695,6 @@ class _PdfListPageState extends State<PdfListPage> {
               ],
             ),
           ),
-          SizedBox(width: 16),
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.grey[200],
-              shape: BoxShape.circle,
-            ),
-          ),
         ],
       ),
     );
@@ -877,6 +716,239 @@ class _PdfListPageState extends State<PdfListPage> {
       foregroundColor: Colors.white,
       elevation: 4,
       tooltip: 'Refresh PDFs',
+    );
+  }
+}
+
+// NEW: PDF Viewer Page with pinch-to-zoom and mobile optimization
+class PdfViewerPage extends StatefulWidget {
+  final String pdfUrl;
+  final String pdfName;
+
+  const PdfViewerPage({
+    Key? key,
+    required this.pdfUrl,
+    required this.pdfName,
+  }) : super(key: key);
+
+  @override
+  State<PdfViewerPage> createState() => _PdfViewerPageState();
+}
+
+class _PdfViewerPageState extends State<PdfViewerPage> {
+  final PdfViewerController _pdfViewerController = PdfViewerController();
+  int currentPage = 1;
+  int totalPages = 0;
+  bool isLoading = true;
+
+  @override
+  void dispose() {
+    _pdfViewerController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.pdfName,
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (totalPages > 0)
+              Text(
+                'Page $currentPage of $totalPages',
+                style: TextStyle(fontSize: 12, color: Colors.grey[600]),
+              ),
+          ],
+        ),
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+        elevation: 1,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.zoom_in),
+            onPressed: () {
+              _pdfViewerController.zoomLevel = _pdfViewerController.zoomLevel + 0.25;
+            },
+            tooltip: 'Zoom In',
+          ),
+          IconButton(
+            icon: Icon(Icons.zoom_out),
+            onPressed: () {
+              _pdfViewerController.zoomLevel = _pdfViewerController.zoomLevel - 0.25;
+            },
+            tooltip: 'Zoom Out',
+          ),
+          IconButton(
+            icon: Icon(Icons.search),
+            onPressed: () {
+              _pdfViewerController.searchText('search');
+            },
+            tooltip: 'Search',
+          ),
+        ],
+      ),
+      body: Stack(
+        children: [
+          SfPdfViewer.network(
+            widget.pdfUrl,
+            controller: _pdfViewerController,
+            enableDoubleTapZooming: true,
+            enableTextSelection: true,
+            canShowScrollHead: true,
+            canShowScrollStatus: true,
+            onDocumentLoaded: (PdfDocumentLoadedDetails details) {
+              setState(() {
+                totalPages = details.document.pages.count;
+                isLoading = false;
+              });
+            },
+            onPageChanged: (PdfPageChangedDetails details) {
+              setState(() {
+                currentPage = details.newPageNumber;
+              });
+            },
+            onDocumentLoadFailed: (PdfDocumentLoadFailedDetails details) {
+              setState(() {
+                isLoading = false;
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to load PDF: ${details.error}'),
+                  backgroundColor: Colors.red,
+                  duration: Duration(seconds: 4),
+                ),
+              );
+            },
+          ),
+          if (isLoading)
+            Container(
+              color: Colors.white,
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.blue),
+                    ),
+                    SizedBox(height: 16),
+                    Text(
+                      'Loading PDF...',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: Colors.grey[700],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+      bottomNavigationBar: !isLoading && totalPages > 1
+          ? Container(
+              color: Colors.white,
+              padding: EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+              child: SafeArea(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    IconButton(
+                      icon: Icon(Icons.chevron_left, size: 28),
+                      onPressed: currentPage > 1
+                          ? () {
+                              _pdfViewerController.previousPage();
+                            }
+                          : null,
+                      tooltip: 'Previous Page',
+                      color: Colors.blue,
+                    ),
+                    GestureDetector(
+                      onTap: () => _showPageNavigator(context),
+                      child: Container(
+                        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                        ),
+                        child: Text(
+                          '$currentPage / $totalPages',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.blue[700],
+                          ),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: Icon(Icons.chevron_right, size: 28),
+                      onPressed: currentPage < totalPages
+                          ? () {
+                              _pdfViewerController.nextPage();
+                            }
+                          : null,
+                      tooltip: 'Next Page',
+                      color: Colors.blue,
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+
+  void _showPageNavigator(BuildContext context) {
+    final TextEditingController pageController = TextEditingController();
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Go to Page'),
+        content: TextField(
+          controller: pageController,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            hintText: 'Enter page number (1-$totalPages)',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final page = int.tryParse(pageController.text);
+              if (page != null && page >= 1 && page <= totalPages) {
+                _pdfViewerController.jumpToPage(page);
+                Navigator.pop(context);
+              } else {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Please enter a valid page number'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+              }
+            },
+            child: Text('Go'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.blue,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

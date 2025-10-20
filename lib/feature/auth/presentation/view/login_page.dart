@@ -9,10 +9,23 @@ import 'package:pdf_viewer/feature/auth/presentation/view_model/auth_event.dart'
 import 'package:pdf_viewer/feature/auth/presentation/view_model/auth_state.dart';
 import 'package:pdf_viewer/feature/pdf/presentation/view/pdf_screen.dart';
 
-class Login extends StatelessWidget {
+class Login extends StatefulWidget {
+  @override
+  State<Login> createState() => _LoginState();
+}
+
+class _LoginState extends State<Login> {
   final emailController = TextEditingController();
   final passwordController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
+  bool _isPasswordObscure = true; // State variable for password visibility
+
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -237,51 +250,46 @@ class Login extends StatelessWidget {
   }
 
   Widget _buildPasswordField() {
-    return StatefulBuilder(
-      builder: (context, setState) {
-        bool isObscure = true;
-        return TextFormField(
-          controller: passwordController,
-          obscureText: isObscure,
-          validator: (value) {
-            if (value == null || value.isEmpty) {
-              return 'Please enter your password';
-            }
-            if (value.length < 6) {
-              return 'Password must be at least 6 characters';
-            }
-            return null;
-          },
-          style: TextStyle(fontSize: 16),
-          decoration: InputDecoration(
-            labelText: 'Password',
-            labelStyle: TextStyle(color: Colors.grey.shade600),
-            prefixIcon: Icon(Icons.lock_outline, color: Colors.blue.shade700),
-            suffixIcon: IconButton(
-              icon: Icon(
-                isObscure ? Icons.visibility_off : Icons.visibility,
-                color: Colors.grey.shade500,
-              ),
-              onPressed: () {
-                setState(() {
-                  isObscure = !isObscure;
-                });
-              },
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(15),
-              borderSide: BorderSide(color: Colors.grey.shade300),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(15),
-              borderSide: BorderSide(color: Colors.blue.shade700, width: 2),
-            ),
-            filled: true,
-            fillColor: Colors.grey.shade50,
-            contentPadding: EdgeInsets.symmetric(vertical: 18, horizontal: 20),
-          ),
-        );
+    return TextFormField(
+      controller: passwordController,
+      obscureText: _isPasswordObscure,
+      validator: (value) {
+        if (value == null || value.isEmpty) {
+          return 'Please enter your password';
+        }
+        if (value.length < 6) {
+          return 'Password must be at least 6 characters';
+        }
+        return null;
       },
+      style: TextStyle(fontSize: 16),
+      decoration: InputDecoration(
+        labelText: 'Password',
+        labelStyle: TextStyle(color: Colors.grey.shade600),
+        prefixIcon: Icon(Icons.lock_outline, color: Colors.blue.shade700),
+        suffixIcon: IconButton(
+          icon: Icon(
+            _isPasswordObscure ? Icons.visibility_off : Icons.visibility,
+            color: Colors.grey.shade500,
+          ),
+          onPressed: () {
+            setState(() {
+              _isPasswordObscure = !_isPasswordObscure;
+            });
+          },
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide(color: Colors.grey.shade300),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(15),
+          borderSide: BorderSide(color: Colors.blue.shade700, width: 2),
+        ),
+        filled: true,
+        fillColor: Colors.grey.shade50,
+        contentPadding: EdgeInsets.symmetric(vertical: 18, horizontal: 20),
+      ),
     );
   }
 
@@ -401,9 +409,9 @@ class Login extends StatelessWidget {
           child: TextButton(
             onPressed: () {
               Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (_) => SignupScreen()), // Replace with your actual home screen
-            );
+                context,
+                MaterialPageRoute(builder: (_) => SignupScreen()),
+              );
             },
             style: TextButton.styleFrom(
               shape: RoundedRectangleBorder(
